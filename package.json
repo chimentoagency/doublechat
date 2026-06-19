@@ -1,0 +1,13 @@
+{
+  "name": "doublechat",
+  "version": "0.1.0",
+  "description": "Local LAN video call for body doubling sessions",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "setup-certs": "node scripts/setup-certs.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

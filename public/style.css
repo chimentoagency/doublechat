@@ -1,0 +1,113 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #111827;
+  --surface: #1f2937;
+  --border: #374151;
+  --text: #f9fafb;
+  --text-muted: #9ca3af;
+  --accent: #6366f1;
+  --danger: #ef4444;
+  --success: #22c55e;
+  --warn: #f59e0b;
+}
+
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; }
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* Header */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.logo { font-weight: 700; font-size: 1.1rem; letter-spacing: -0.02em; }
+
+.status {
+  font-size: 0.8rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-weight: 500;
+}
+.status-waiting    { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+.status-connecting { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+.status-connected  { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
+.status-error      { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+
+/* Video area */
+main {
+  flex: 1;
+  position: relative;
+  background: #000;
+  overflow: hidden;
+}
+
+.video-wrapper { position: absolute; inset: 0; }
+.video-wrapper video { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.video-label {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 0.75rem;
+  font-size: 0.75rem;
+  color: rgba(255,255,255,0.75);
+  background: rgba(0,0,0,0.45);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+/* Local video: small overlay in bottom-right */
+.video-wrapper.local {
+  inset: auto;
+  bottom: 1rem;
+  right: 1rem;
+  width: 200px;
+  height: 150px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid var(--border);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+
+/* Controls */
+.controls {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  align-items: center;
+  padding: 0.875rem 1.25rem;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.ctrl-btn {
+  padding: 0.5rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.ctrl-btn:hover { background: var(--border); }
+.ctrl-btn.muted  { background: color-mix(in srgb, var(--danger) 20%, var(--bg)); border-color: var(--danger); color: var(--danger); }
+
+.popout-btn { margin-left: 1rem; border-color: var(--accent); color: var(--accent); }
+.popout-btn:hover { background: color-mix(in srgb, var(--accent) 15%, var(--bg)); }
+
+/* PiP container styles (injected into pip window) */
+.pip-video-wrap { width: 100%; height: 100%; background: #000; }
+.pip-video-wrap video { width: 100%; height: 100%; object-fit: cover; }
