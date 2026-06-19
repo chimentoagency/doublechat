@@ -289,5 +289,139 @@ main {
   font-size: 0.82rem;
 }
 
+/* ── Contacts list ─────────────────────────────────────────────────────────── */
+
+#contacts-section {
+  margin-bottom: 1.25rem;
+  text-align: left;
+}
+
+.contact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 0.4rem;
+}
+.contact-row:last-child { margin-bottom: 0; }
+
+.contact-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.contact-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contact-ip {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contact-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.no-contacts {
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-align: center;
+  padding: 0.5rem 0 0.25rem;
+}
+
+/* ── Home screen action buttons ────────────────────────────────────────────── */
+
+#action-btns {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+/* ── Modal overlays ────────────────────────────────────────────────────────── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.modal-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 2rem 1.75rem;
+  width: 320px;
+  max-width: 90vw;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.modal-eyebrow {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.modal-name {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.modal-btns {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+  margin-top: 0.25rem;
+}
+
+.save-ip {
+  font-family: monospace;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.modal-card input[type="text"] {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.9rem;
+  outline: none;
+  text-align: center;
+}
+.modal-card input[type="text"]:focus { border-color: var(--accent); }
+
+/* Danger variant for setup buttons */
+.setup-btn.danger { border-color: var(--danger); color: var(--danger); }
+.setup-btn.danger:hover { background: color-mix(in srgb, var(--danger) 12%, var(--bg)); }
+
 /* ── Utility ───────────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }

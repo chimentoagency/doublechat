@@ -5,6 +5,13 @@ use tauri::Emitter;
 const SIGNAL_PORT: u16 = 3717;
 
 #[tauri::command]
+fn get_device_name() -> String {
+    std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "Unknown Device".to_string())
+}
+
+#[tauri::command]
 fn get_local_ips() -> Vec<String> {
     match local_ip_address::list_afinet_netifas() {
         Ok(ifaces) => ifaces
@@ -36,7 +43,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_local_ips])
+        .invoke_handler(tauri::generate_handler![get_local_ips, get_device_name])
         .run(tauri::generate_context!())
         .expect("error while running doublechat");
 }

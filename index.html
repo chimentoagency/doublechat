@@ -14,28 +14,60 @@
         <h1>DoubleChat</h1>
         <p class="tagline">Local body-doubling video call</p>
 
-        <div id="role-btns">
-          <button id="btn-host" class="setup-btn primary">I'm the Host</button>
-          <button id="btn-join" class="setup-btn">I'm Joining</button>
+        <!-- Saved contacts -->
+        <div id="contacts-section">
+          <div id="contacts-list"></div>
+          <p id="no-contacts" class="no-contacts hidden">No saved contacts yet.</p>
         </div>
 
-        <!-- Host panel -->
-        <div id="host-panel" class="panel hidden">
-          <button id="btn-back-host" class="back-btn">← Back</button>
-          <p class="panel-label">Share one of these addresses with your partner:</p>
+        <!-- Primary actions -->
+        <div id="action-btns">
+          <button id="btn-share-address" class="setup-btn">Share My Address</button>
+          <button id="btn-manual-connect" class="setup-btn primary">Connect to IP</button>
+        </div>
+
+        <!-- Share address panel -->
+        <div id="share-panel" class="panel hidden">
+          <button id="btn-back-share" class="back-btn">← Back</button>
+          <p class="panel-label">Share one of these with your partner:</p>
           <div id="host-ips"></div>
-          <p id="host-wait" class="wait-msg">Waiting for partner to connect...</p>
+          <p class="wait-msg">Waiting for incoming call...</p>
         </div>
 
-        <!-- Join panel -->
-        <div id="join-panel" class="panel hidden">
-          <button id="btn-back-join" class="back-btn">← Back</button>
-          <label for="host-ip-input">Host's address:</label>
+        <!-- Manual connect panel -->
+        <div id="connect-panel" class="panel hidden">
+          <button id="btn-back-connect" class="back-btn">← Back</button>
+          <label for="host-ip-input">Partner's address:</label>
           <div class="join-row">
             <input id="host-ip-input" type="text" placeholder="192.168.1.x:3717" spellcheck="false" />
-            <button id="btn-connect" class="setup-btn primary">Connect</button>
+            <button id="btn-connect" class="setup-btn primary">Call</button>
           </div>
           <p id="join-error" class="error-msg hidden"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Incoming Call Overlay ── -->
+    <div id="incoming-overlay" class="modal-overlay hidden">
+      <div class="modal-card">
+        <p class="modal-eyebrow">Incoming call</p>
+        <p id="incoming-name" class="modal-name"></p>
+        <div class="modal-btns">
+          <button id="btn-accept" class="setup-btn primary">Accept</button>
+          <button id="btn-decline" class="setup-btn danger">Decline</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Save Contact Overlay ── -->
+    <div id="save-overlay" class="modal-overlay hidden">
+      <div class="modal-card">
+        <p class="modal-eyebrow">Save contact?</p>
+        <p id="save-ip-display" class="save-ip"></p>
+        <input id="save-name-input" type="text" placeholder="Name" spellcheck="false" />
+        <div class="modal-btns">
+          <button id="btn-save-confirm" class="setup-btn primary">Save</button>
+          <button id="btn-save-skip" class="setup-btn">Skip</button>
         </div>
       </div>
     </div>
@@ -48,17 +80,16 @@
       </header>
 
       <main>
-        <div class="video-wrap" id="remote-wrap">
+        <div class="video-wrap">
           <video id="remote-video" autoplay playsinline></video>
           <span class="vid-label">Partner</span>
         </div>
-        <div class="video-wrap local" id="local-wrap">
+        <div class="video-wrap local">
           <video id="local-video" autoplay playsinline muted></video>
           <span class="vid-label">You</span>
         </div>
       </main>
 
-      <!-- Settings panel (slides up from controls) -->
       <div id="settings-panel" class="settings-panel hidden">
         <div class="device-row">
           <label for="sel-audio">Microphone</label>
@@ -80,7 +111,7 @@
       </footer>
     </div>
 
-    <!-- ── Update banner ── -->
+    <!-- ── Update Banner ── -->
     <div id="update-banner" class="hidden">
       <span id="update-msg"></span>
       <button id="btn-restart">Restart to Update</button>

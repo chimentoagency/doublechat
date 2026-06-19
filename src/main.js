@@ -12,10 +12,15 @@ const state = {
   localStream: null,
   alwaysOnTop: false,
   pipWindow: null,
-  signalingAddr: null,
+  // Call tracking
+  mode: 'idle',          // 'idle' | 'listening' | 'calling' | 'in-call'
+  callPeerIp: null,      // IP of the remote party for this call
+  callPeerName: null,    // Device name from call-request
 };
 
+let deviceName = 'Unknown Device';
 const appWindow = getCurrentWindow();
+const LISTEN_ADDR = '127.0.0.1:3717';
 
 // ── DOM helpers ───────────────────────────────────────────────────────────────
 
@@ -23,17 +28,136 @@ const $ = (id) => document.getElementById(id);
 const show = (id) => $(id).classList.remove('hidden');
 const hide = (id) => $(id).classList.add('hidden');
 
-// ── Setup screen ──────────────────────────────────────────────────────────────
+// ── Startup ───────────────────────────────────────────────────────────────────
 
-$('btn-host').addEventListener('click', async () => {
-  hide('role-btns');
-  show('host-panel');
+async function init() {
+  deviceName = await invoke('get_device_name');
+  renderContacts();
+  startListening();
+}
+
+init();
+
+// ── Contacts (localStorage) ───────────────────────────────────────────────────
+
+function loadContacts() {
+  try { return JSON.parse(localStorage.getItem('dc-contacts') || '[]'); }
+  catch { return []; }
+}
+
+function saveContacts(contacts) {
+  localStorage.setItem('dc-contacts', JSON.stringify(contacts));
+}
+
+function upsertContact(name, ip) {
+  const contacts = loadContacts();
+  const existing = contacts.find((c) => c.ip === ip);
+  if (existing) {
+    existing.name = name;
+    existing.lastSeen = new Date().toISOString();
+  } else {
+    contacts.unshift({ id: crypto.randomUUID(), name, ip, lastSeen: new Date().toISOString() });
+  }
+  saveContacts(contacts);
+  renderContacts();
+}
+
+function deleteContact(id) {
+  saveContacts(loadContacts().filter((c) => c.id !== id));
+  renderContacts();
+}
+
+function renderContacts() {
+  const contacts = loadContacts();
+  const list = $('contacts-list');
+  list.innerHTML = '';
+
+  if (contacts.length === 0) {
+    show('no-contacts');
+    return;
+  }
+
+  hide('no-contacts');
+  contacts.forEach((c) => {
+    const row = document.createElement('div');
+    row.className = 'contact-row';
+    row.innerHTML = `
+      <div class="contact-info">
+        <span class="contact-name">${escHtml(c.name)}</span>
+        <span class="contact-ip">${escHtml(c.ip)}</span>
+      </div>
+      <div class="contact-actions">
+        <button class="ctrl-btn accent call-btn" data-ip="${escHtml(c.ip)}">Call</button>
+        <button class="ctrl-btn danger del-btn"  data-id="${c.id}">✕</button>
+      </div>
+    `;
+    list.appendChild(row);
+  });
+
+  list.querySelectorAll('.call-btn').forEach((btn) =>
+    btn.addEventListener('click', () => callContact(btn.dataset.ip))
+  );
+  list.querySelectorAll('.del-btn').forEach((btn) =>
+    btn.addEventListener('click', () => { deleteContact(btn.dataset.id); })
+  );
+}
+
+function escHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── Listening mode (idle — waiting for incoming calls) ────────────────────────
+
+function startListening() {
+  if (state.ws) return;
+
+  const ws = new WebSocket(`ws://${LISTEN_ADDR}`);
+  state.ws = ws;
+  state.mode = 'listening';
+
+  ws.onmessage = async (e) => {
+    const msg = JSON.parse(e.data);
+
+    if (state.mode === 'listening') {
+      if (msg.type === 'call-request') {
+        // Someone is calling us
+        state.callPeerName = msg.name || msg.ip || 'Unknown';
+        state.callPeerIp   = msg.ip  || null;
+        showIncomingCall(state.callPeerName);
+      }
+      if (msg.type === 'peer-left') {
+        // Caller hung up before we answered
+        hide('incoming-overlay');
+      }
+    } else {
+      // In-call relay
+      await handleSignal(msg);
+    }
+  };
+
+  ws.onclose = () => {
+    state.ws = null;
+    if (state.mode === 'listening') {
+      // Retry quietly
+      setTimeout(startListening, 3000);
+    }
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+// ── Setup screen actions ──────────────────────────────────────────────────────
+
+$('btn-share-address').addEventListener('click', async () => {
+  hide('action-btns');
+  hide('contacts-section');
+  show('share-panel');
 
   const ips = await invoke('get_local_ips');
   const container = $('host-ips');
   container.innerHTML = '';
   if (ips.length === 0) {
-    container.textContent = 'Could not detect LAN IP. Check network connection.';
+    container.textContent = 'No LAN IP detected. Check your network.';
   } else {
     ips.forEach((addr) => {
       const chip = document.createElement('div');
@@ -44,61 +168,109 @@ $('btn-host').addEventListener('click', async () => {
       container.appendChild(chip);
     });
   }
-
-  await startMedia();
-  connectSignaling('127.0.0.1:3717');
 });
 
-$('btn-join').addEventListener('click', async () => {
-  hide('role-btns');
-  show('join-panel');
+$('btn-manual-connect').addEventListener('click', () => {
+  hide('action-btns');
+  hide('contacts-section');
+  show('connect-panel');
   $('host-ip-input').focus();
-  await startMedia();
 });
 
-$('btn-back-host').addEventListener('click', goHome);
-$('btn-back-join').addEventListener('click', goHome);
+$('btn-back-share').addEventListener('click', showHome);
+$('btn-back-connect').addEventListener('click', showHome);
 
-$('btn-connect').addEventListener('click', joinWithInput);
-$('host-ip-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') joinWithInput();
-});
+$('btn-connect').addEventListener('click', connectFromInput);
+$('host-ip-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') connectFromInput(); });
 
-async function joinWithInput() {
+function connectFromInput() {
   const raw = $('host-ip-input').value.trim();
   if (!raw) return;
   const addr = raw.includes(':') ? raw : `${raw}:3717`;
-  state.signalingAddr = addr;
-  connectSignaling(addr);
+  callContact(addr);
 }
 
-function goHome() {
-  // Stop local stream
-  state.localStream?.getTracks().forEach((t) => t.stop());
-  state.localStream = null;
-  $('local-video').srcObject = null;
-  $('remote-video').srcObject = null;
-
-  // Close connections without triggering auto-reconnect
+async function callContact(ip) {
+  // Drop listening connection before calling out
   if (state.ws) {
     state.ws.onclose = null;
     state.ws.close();
     state.ws = null;
   }
-  teardown();
 
-  // Reset setup UI
-  hide('host-panel');
-  hide('join-panel');
-  $('host-ips').innerHTML = '';
-  $('host-ip-input').value = '';
-  hide('join-error');
-  show('role-btns');
+  const myIps = await invoke('get_local_ips');
+  const myIp = myIps[0] || '';
 
-  // Ensure we're on the setup screen
-  hide('call-screen');
-  show('setup-screen');
+  const ws = new WebSocket(`ws://${ip}`);
+  state.ws = ws;
+  state.mode = 'calling';
+  state.callPeerIp = ip;
+
+  ws.onopen = () => {
+    // Announce ourselves once connected
+    send({ type: 'call-request', name: deviceName, ip: myIp });
+    setStatus(`Calling...`);
+  };
+
+  ws.onmessage = async (e) => {
+    const msg = JSON.parse(e.data);
+
+    if (state.mode === 'calling') {
+      if (msg.type === 'call-accepted') {
+        state.callPeerName = null; // We'll get it from the other side
+        await startMedia();
+        enterCallScreen();
+        await startCall(); // We initiate the WebRTC offer
+      }
+      if (msg.type === 'call-declined') {
+        showJoinError('Call was declined.');
+        resetToListening();
+      }
+      if (msg.type === 'peer-left') {
+        showJoinError('No answer — partner may not be available.');
+        resetToListening();
+      }
+    } else {
+      await handleSignal(msg);
+    }
+  };
+
+  ws.onclose = () => {
+    if (state.mode === 'calling') {
+      showJoinError('Could not reach that address. Check IP and try again.');
+      resetToListening();
+    } else if (state.mode === 'in-call') {
+      setStatus('Connection lost — reconnecting...');
+      setTimeout(() => {
+        if (state.ws === ws) callContact(ip);
+      }, 3000);
+    }
+  };
+
+  ws.onerror = () => ws.close();
 }
+
+// ── Incoming call handling ────────────────────────────────────────────────────
+
+function showIncomingCall(name) {
+  $('incoming-name').textContent = name;
+  show('incoming-overlay');
+}
+
+$('btn-accept').addEventListener('click', async () => {
+  hide('incoming-overlay');
+  send({ type: 'call-accepted' });
+  state.mode = 'in-call';
+  await startMedia();
+  enterCallScreen();
+  // Don't call startCall() — the caller will send the offer
+});
+
+$('btn-decline').addEventListener('click', () => {
+  send({ type: 'call-declined' });
+  hide('incoming-overlay');
+  resetToListening();
+});
 
 // ── Media ─────────────────────────────────────────────────────────────────────
 
@@ -119,9 +291,8 @@ async function populateDeviceSelectors() {
   const devices = await navigator.mediaDevices.enumerateDevices();
   const audioSel = $('sel-audio');
   const videoSel = $('sel-video');
-
-  const currentAudio = state.localStream?.getAudioTracks()[0]?.getSettings().deviceId;
-  const currentVideo = state.localStream?.getVideoTracks()[0]?.getSettings().deviceId;
+  const curAudio = state.localStream?.getAudioTracks()[0]?.getSettings().deviceId;
+  const curVideo = state.localStream?.getVideoTracks()[0]?.getSettings().deviceId;
 
   audioSel.innerHTML = '';
   videoSel.innerHTML = '';
@@ -130,15 +301,14 @@ async function populateDeviceSelectors() {
     const opt = document.createElement('option');
     opt.value = d.deviceId;
     opt.textContent = d.label || `Microphone ${audioSel.options.length + 1}`;
-    if (d.deviceId === currentAudio) opt.selected = true;
+    if (d.deviceId === curAudio) opt.selected = true;
     audioSel.appendChild(opt);
   });
-
   devices.filter((d) => d.kind === 'videoinput').forEach((d) => {
     const opt = document.createElement('option');
     opt.value = d.deviceId;
     opt.textContent = d.label || `Camera ${videoSel.options.length + 1}`;
-    if (d.deviceId === currentVideo) opt.selected = true;
+    if (d.deviceId === curVideo) opt.selected = true;
     videoSel.appendChild(opt);
   });
 }
@@ -146,17 +316,13 @@ async function populateDeviceSelectors() {
 async function reinitMedia() {
   const audioId = $('sel-audio').value;
   const videoId = $('sel-video').value;
-
   state.localStream?.getTracks().forEach((t) => t.stop());
-
   try {
     state.localStream = await navigator.mediaDevices.getUserMedia({
       video: { deviceId: { exact: videoId }, width: 640, height: 480, frameRate: 15 },
       audio: { deviceId: { exact: audioId } },
     });
     $('local-video').srcObject = state.localStream;
-
-    // Replace tracks live if in a call
     if (state.pc) {
       for (const sender of state.pc.getSenders()) {
         if (sender.track?.kind === 'audio') {
@@ -169,77 +335,28 @@ async function reinitMedia() {
       }
     }
   } catch (err) {
-    console.error('Failed to switch device:', err);
+    console.error('Device switch failed:', err);
   }
 }
 
 $('sel-audio').addEventListener('change', reinitMedia);
 $('sel-video').addEventListener('change', reinitMedia);
 
-// ── Signaling ─────────────────────────────────────────────────────────────────
-
-function connectSignaling(addr) {
-  state.signalingAddr = addr;
-  const ws = new WebSocket(`ws://${addr}`);
-  state.ws = ws;
-  setStatus('Connecting...');
-
-  ws.onopen = () => setStatus('Waiting for partner...');
-
-  ws.onmessage = async (e) => {
-    const msg = JSON.parse(e.data);
-    await handleSignal(msg);
-  };
-
-  ws.onclose = () => {
-    if ($('call-screen').classList.contains('hidden')) {
-      showJoinError('Could not reach host. Check the address and try again.');
-    } else {
-      setStatus('Connection lost — reconnecting...');
-      setTimeout(() => {
-        if (state.ws === ws) connectSignaling(state.signalingAddr);
-      }, 3000);
-    }
-  };
-
-  ws.onerror = () => ws.close();
-}
+// ── Signaling (in-call relay) ─────────────────────────────────────────────────
 
 async function handleSignal(msg) {
   switch (msg.type) {
-    case 'full':
-      showJoinError('Session is full (max 2 participants).');
-      state.ws?.close();
-      break;
-
-    case 'peers':
-      if (msg.count === 2) {
-        enterCallScreen();
-        setStatus('Partner found — connecting...');
-      }
-      break;
-
-    case 'peer-joined':
-      if (msg.count === 2 && !state.pc) {
-        enterCallScreen();
-        setStatus('Partner connected — starting call...');
-        await startCall();
-      }
-      break;
-
     case 'peer-left':
       setStatus('Partner disconnected');
       teardown();
+      promptSaveContact();
       break;
-
     case 'offer':
       await handleOffer(msg.sdp);
       break;
-
     case 'answer':
       if (state.pc) await state.pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
       break;
-
     case 'ice':
       if (state.pc && msg.candidate) await state.pc.addIceCandidate(msg.candidate);
       break;
@@ -254,11 +371,8 @@ function send(msg) {
 
 function buildPeerConnection() {
   const pc = new RTCPeerConnection({ iceServers: [] });
-
   for (const track of state.localStream.getTracks()) pc.addTrack(track, state.localStream);
 
-  // Use the stream provided by the remote peer directly — this carries both
-  // audio and video and avoids manual track assembly dropping the audio track.
   pc.ontrack = (e) => {
     if (e.streams?.[0]) {
       $('remote-video').srcObject = e.streams[0];
@@ -276,8 +390,10 @@ function buildPeerConnection() {
 
   pc.onconnectionstatechange = () => {
     const s = pc.connectionState;
-    if (s === 'connected') setStatus('Connected');
-    else if (s === 'disconnected' || s === 'failed') {
+    if (s === 'connected') {
+      state.mode = 'in-call';
+      setStatus('Connected');
+    } else if (s === 'disconnected' || s === 'failed') {
       setStatus('Connection lost — waiting...');
       pc.restartIce();
     }
@@ -307,24 +423,57 @@ function teardown() {
   $('remote-video').srcObject = null;
 }
 
+// ── Save contact prompt ───────────────────────────────────────────────────────
+
+function promptSaveContact() {
+  const ip = state.callPeerIp;
+  const suggestedName = state.callPeerName;
+  if (!ip) return;
+
+  // Don't prompt if already saved
+  const existing = loadContacts().find((c) => c.ip === ip);
+  if (existing) { existing.lastSeen = new Date().toISOString(); saveContacts(loadContacts()); return; }
+
+  $('save-ip-display').textContent = ip;
+  $('save-name-input').value = suggestedName || '';
+  show('save-overlay');
+}
+
+$('btn-save-confirm').addEventListener('click', () => {
+  const name = $('save-name-input').value.trim() || $('save-ip-display').textContent;
+  upsertContact(name, $('save-ip-display').textContent);
+  hide('save-overlay');
+});
+
+$('btn-save-skip').addEventListener('click', () => hide('save-overlay'));
+
 // ── Hang Up ───────────────────────────────────────────────────────────────────
 
 $('btn-hangup').addEventListener('click', hangUp);
 
 async function hangUp() {
-  // Close pip if open
   if (state.pipWindow && !state.pipWindow.closed) state.pipWindow.close();
   if (document.pictureInPictureElement) await document.exitPictureInPicture().catch(() => {});
 
-  // Reset always-on-top
   if (state.alwaysOnTop) {
     state.alwaysOnTop = false;
     await appWindow.setAlwaysOnTop(false);
   }
 
-  goHome();
+  const hadCall = !!state.pc;
+  teardown();
 
-  // Reset control button states
+  state.localStream?.getTracks().forEach((t) => t.stop());
+  state.localStream = null;
+  $('local-video').srcObject = null;
+
+  if (state.ws) {
+    state.ws.onclose = null;
+    state.ws.close();
+    state.ws = null;
+  }
+
+  // Reset controls
   $('btn-mute-mic').textContent = 'Mute Mic';
   $('btn-mute-mic').classList.remove('muted');
   $('btn-mute-cam').textContent = 'Stop Video';
@@ -333,6 +482,20 @@ async function hangUp() {
   $('btn-on-top').classList.remove('active');
   $('btn-popout').textContent = 'Pop Out';
   hide('settings-panel');
+  $('btn-settings').classList.remove('active');
+
+  if (hadCall) promptSaveContact();
+
+  showHome();
+  resetToListening();
+}
+
+function resetToListening() {
+  state.mode = 'idle';
+  state.callPeerIp = null;
+  state.callPeerName = null;
+  // Small delay so any in-flight close events settle
+  setTimeout(startListening, 500);
 }
 
 // ── Controls ──────────────────────────────────────────────────────────────────
@@ -370,14 +533,8 @@ $('btn-settings').addEventListener('click', () => {
 $('btn-popout').addEventListener('click', handlePopout);
 
 async function handlePopout() {
-  if (state.pipWindow && !state.pipWindow.closed) {
-    state.pipWindow.close();
-    return;
-  }
-  if (document.pictureInPictureElement) {
-    await document.exitPictureInPicture();
-    return;
-  }
+  if (state.pipWindow && !state.pipWindow.closed) { state.pipWindow.close(); return; }
+  if (document.pictureInPictureElement) { await document.exitPictureInPicture(); return; }
 
   const remoteVideo = $('remote-video');
 
@@ -393,7 +550,6 @@ async function handlePopout() {
         .bar{padding:.3rem .6rem;background:rgba(0,0,0,.6);color:rgba(255,255,255,.8);font-size:.75rem}
         video{flex:1;width:100%;object-fit:cover;display:block}
       </style>`;
-
       const bar = pip.document.createElement('div');
       bar.className = 'bar';
       bar.textContent = 'DoubleChat — Partner';
@@ -427,7 +583,19 @@ async function handlePopout() {
 
 function enterCallScreen() {
   hide('setup-screen');
+  hide('incoming-overlay');
   show('call-screen');
+}
+
+function showHome() {
+  hide('call-screen');
+  hide('share-panel');
+  hide('connect-panel');
+  show('setup-screen');
+  show('action-btns');
+  show('contacts-section');
+  hide('join-error');
+  $('host-ip-input').value = '';
 }
 
 function setStatus(text) {
@@ -435,6 +603,9 @@ function setStatus(text) {
 }
 
 function showJoinError(msg) {
+  show('connect-panel');
+  hide('action-btns');
+  hide('contacts-section');
   const el = $('join-error');
   el.textContent = msg;
   show('join-error');
