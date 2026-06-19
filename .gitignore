@@ -10,3 +10,6 @@ logs/
 # Tauri / Rust
 src-tauri/target/
 src-tauri/gen/
+
+# Local build output
+release/
