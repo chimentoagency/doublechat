@@ -1,13 +1,23 @@
 {
   "name": "doublechat",
+  "private": true,
   "version": "0.1.0",
-  "description": "Local LAN video call for body doubling sessions",
-  "main": "server.js",
+  "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "setup-certs": "node scripts/setup-certs.js"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "generate-icons": "tauri icon src-tauri/icons/source.svg"
   },
   "dependencies": {
-    "ws": "^8.18.0"
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.0.0",
+    "@tauri-apps/plugin-process": "^2.0.0",
+    "@tauri-apps/plugin-updater": "^2.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "vite": "^6.0.0"
   }
 }

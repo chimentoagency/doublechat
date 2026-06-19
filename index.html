@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DoubleChat</title>
+</head>
+<body>
+  <div id="app">
+
+    <!-- ── Setup Screen ── -->
+    <div id="setup-screen">
+      <div class="setup-card">
+        <h1>DoubleChat</h1>
+        <p class="tagline">Local body-doubling video call</p>
+
+        <div id="role-btns">
+          <button id="btn-host" class="setup-btn primary">I'm the Host</button>
+          <button id="btn-join" class="setup-btn">I'm Joining</button>
+        </div>
+
+        <!-- Shown after Host is chosen -->
+        <div id="host-panel" class="panel hidden">
+          <p class="panel-label">Share one of these addresses with your partner:</p>
+          <div id="host-ips"></div>
+          <p id="host-wait" class="wait-msg">Waiting for partner to connect...</p>
+        </div>
+
+        <!-- Shown after Join is chosen -->
+        <div id="join-panel" class="panel hidden">
+          <label for="host-ip-input">Host's address:</label>
+          <div class="join-row">
+            <input id="host-ip-input" type="text" placeholder="192.168.1.x:3717" spellcheck="false" />
+            <button id="btn-connect" class="setup-btn primary">Connect</button>
+          </div>
+          <p id="join-error" class="error-msg hidden"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Call Screen (hidden until connected) ── -->
+    <div id="call-screen" class="hidden">
+      <header>
+        <span class="logo">DoubleChat</span>
+        <span id="call-status" class="status"></span>
+      </header>
+
+      <main>
+        <div class="video-wrap" id="remote-wrap">
+          <video id="remote-video" autoplay playsinline></video>
+          <span class="vid-label">Partner</span>
+        </div>
+        <div class="video-wrap local" id="local-wrap">
+          <video id="local-video" autoplay playsinline muted></video>
+          <span class="vid-label">You</span>
+        </div>
+      </main>
+
+      <footer class="controls">
+        <button id="btn-mute-mic" class="ctrl-btn">Mute Mic</button>
+        <button id="btn-mute-cam" class="ctrl-btn">Stop Video</button>
+        <button id="btn-popout"   class="ctrl-btn accent">Pop Out</button>
+        <button id="btn-on-top"   class="ctrl-btn">Always on Top: Off</button>
+      </footer>
+    </div>
+
+    <!-- ── Update banner (hidden until update downloaded) ── -->
+    <div id="update-banner" class="hidden">
+      <span id="update-msg"></span>
+      <button id="btn-restart">Restart to Update</button>
+    </div>
+
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
