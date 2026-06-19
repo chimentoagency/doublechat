@@ -33,7 +33,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU5RkUwOURCNTBCRUE2NUUKUldSZXByNVEyd24rNmJOLzFBOHFObnNhRXFKZVRxdkVab0ladTg3WEZ4UzVGNVJXRjRzRXhkYTMK",
       "endpoints": [
         "https://github.com/chimentoagency/doublechat/releases/latest/download/latest.json"
       ]
