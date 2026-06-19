@@ -5,6 +5,8 @@ certs/
 *.key
 .env
 
+logs/
+
 # Tauri / Rust
 src-tauri/target/
 src-tauri/gen/
