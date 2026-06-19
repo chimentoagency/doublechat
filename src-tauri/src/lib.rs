@@ -46,9 +46,8 @@ pub fn run() {
             tauri::async_runtime::spawn(signaling::start(SIGNAL_PORT));
             tauri::async_runtime::spawn(check_for_updates(handle.clone()));
 
-            let ips = local_ipv4s();
-            if !ips.is_empty() {
-                mdns::start(handle, &get_device_name(), ips, SIGNAL_PORT);
+            if let Some(ip) = local_ipv4s().into_iter().next() {
+                mdns::start(handle, &get_device_name(), &ip.to_string(), SIGNAL_PORT);
             }
 
             Ok(())

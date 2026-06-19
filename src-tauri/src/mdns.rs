@@ -1,6 +1,5 @@
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use serde::Serialize;
-use std::net::Ipv4Addr;
 use tauri::{AppHandle, Emitter};
 
 #[derive(Serialize, Clone)]
@@ -10,7 +9,7 @@ pub struct Peer {
     pub port: u16,
 }
 
-pub fn start(app: AppHandle, device_name: &str, ips: Vec<Ipv4Addr>, port: u16) {
+pub fn start(app: AppHandle, device_name: &str, local_ip: &str, port: u16) {
     let safe_name: String = device_name
         .chars()
         .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
@@ -26,7 +25,7 @@ pub fn start(app: AppHandle, device_name: &str, ips: Vec<Ipv4Addr>, port: u16) {
         "_doublechat._tcp.local.",
         &safe_name,
         &hostname,
-        ips.as_slice(),
+        local_ip,
         port,
         None,
     ) {
