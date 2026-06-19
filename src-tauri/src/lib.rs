@@ -1,5 +1,7 @@
 mod signaling;
 
+use tauri::Emitter;
+
 const SIGNAL_PORT: u16 = 3717;
 
 #[tauri::command]
