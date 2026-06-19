@@ -12,11 +12,14 @@ const state = {
   localStream: null,
   alwaysOnTop: false,
   pipWindow: null,
-  // Call tracking
-  mode: 'idle',          // 'idle' | 'listening' | 'calling' | 'in-call'
-  callPeerIp: null,      // IP of the remote party for this call
-  callPeerName: null,    // Device name from call-request
+  mode: 'idle',            // 'idle' | 'listening' | 'calling' | 'in-call'
+  callPeerIp: null,
+  callPeerName: null,
+  callPeerHostname: null,  // mDNS device name, stable across IP changes
 };
+
+// hostname → { name, ip, port } for currently-online DoubleChat peers
+const livePeers = new Map();
 
 let deviceName = 'Unknown Device';
 const appWindow = getCurrentWindow();
@@ -34,6 +37,16 @@ async function init() {
   deviceName = await invoke('get_device_name');
   renderContacts();
   startListening();
+
+  listen('mdns-peer-found', (e) => {
+    livePeers.set(e.payload.name, e.payload);
+    renderNearby();
+  });
+
+  listen('mdns-peer-lost', (e) => {
+    livePeers.delete(e.payload);
+    renderNearby();
+  });
 }
 
 init();
@@ -49,14 +62,24 @@ function saveContacts(contacts) {
   localStorage.setItem('dc-contacts', JSON.stringify(contacts));
 }
 
-function upsertContact(name, ip) {
+function upsertContact(name, ip, hostname = null) {
   const contacts = loadContacts();
-  const existing = contacts.find((c) => c.ip === ip);
+  const existing = contacts.find((c) =>
+    (hostname && c.hostname === hostname) || c.lastIp === ip || c.ip === ip
+  );
   if (existing) {
     existing.name = name;
+    if (hostname) existing.hostname = hostname;
+    existing.lastIp = ip;
     existing.lastSeen = new Date().toISOString();
   } else {
-    contacts.unshift({ id: crypto.randomUUID(), name, ip, lastSeen: new Date().toISOString() });
+    contacts.unshift({
+      id: crypto.randomUUID(),
+      name,
+      hostname: hostname || null,
+      lastIp: ip,
+      lastSeen: new Date().toISOString(),
+    });
   }
   saveContacts(contacts);
   renderContacts();
@@ -79,34 +102,73 @@ function renderContacts() {
 
   hide('no-contacts');
   contacts.forEach((c) => {
+    const ip = c.lastIp || c.ip || '';
+    const hostname = c.hostname || null;
     const row = document.createElement('div');
     row.className = 'contact-row';
     row.innerHTML = `
       <div class="contact-info">
         <span class="contact-name">${escHtml(c.name)}</span>
-        <span class="contact-ip">${escHtml(c.ip)}</span>
+        <span class="contact-ip">${escHtml(ip)}</span>
       </div>
       <div class="contact-actions">
-        <button class="ctrl-btn accent call-btn" data-ip="${escHtml(c.ip)}">Call</button>
-        <button class="ctrl-btn danger del-btn"  data-id="${c.id}">✕</button>
+        <button class="ctrl-btn accent call-btn"
+          data-ip="${escHtml(ip)}"
+          data-hostname="${escHtml(hostname || '')}">Call</button>
+        <button class="ctrl-btn danger del-btn" data-id="${c.id}">✕</button>
       </div>
     `;
     list.appendChild(row);
   });
 
   list.querySelectorAll('.call-btn').forEach((btn) =>
-    btn.addEventListener('click', () => callContact(btn.dataset.ip))
+    btn.addEventListener('click', () =>
+      callContact(btn.dataset.ip, btn.dataset.hostname || null)
+    )
   );
   list.querySelectorAll('.del-btn').forEach((btn) =>
-    btn.addEventListener('click', () => { deleteContact(btn.dataset.id); })
+    btn.addEventListener('click', () => deleteContact(btn.dataset.id))
   );
+}
+
+// ── Nearby (mDNS) ─────────────────────────────────────────────────────────────
+
+function renderNearby() {
+  const list = $('nearby-list');
+  list.innerHTML = '';
+
+  if (livePeers.size === 0) {
+    hide('nearby-section');
+    return;
+  }
+
+  show('nearby-section');
+  for (const peer of livePeers.values()) {
+    const row = document.createElement('div');
+    row.className = 'contact-row';
+    row.innerHTML = `
+      <div class="contact-info">
+        <span class="contact-name">
+          <span class="online-dot"></span>${escHtml(peer.name)}
+        </span>
+      </div>
+      <div class="contact-actions">
+        <button class="ctrl-btn accent" data-hostname="${escHtml(peer.name)}">Call</button>
+      </div>
+    `;
+    row.querySelector('button').addEventListener('click', () => {
+      const p = livePeers.get(peer.name);
+      if (p) callContact(`${p.ip}:${p.port}`, p.name);
+    });
+    list.appendChild(row);
+  }
 }
 
 function escHtml(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// ── Listening mode (idle — waiting for incoming calls) ────────────────────────
+// ── Listening mode ────────────────────────────────────────────────────────────
 
 function startListening() {
   if (state.ws) return;
@@ -120,27 +182,22 @@ function startListening() {
 
     if (state.mode === 'listening') {
       if (msg.type === 'call-request') {
-        // Someone is calling us
-        state.callPeerName = msg.name || msg.ip || 'Unknown';
-        state.callPeerIp   = msg.ip  || null;
+        state.callPeerName     = msg.name || msg.ip || 'Unknown';
+        state.callPeerIp       = msg.ip  || null;
+        state.callPeerHostname = msg.hostname || null;
         showIncomingCall(state.callPeerName);
       }
       if (msg.type === 'peer-left') {
-        // Caller hung up before we answered
         hide('incoming-overlay');
       }
     } else {
-      // In-call relay
       await handleSignal(msg);
     }
   };
 
   ws.onclose = () => {
     state.ws = null;
-    if (state.mode === 'listening') {
-      // Retry quietly
-      setTimeout(startListening, 3000);
-    }
+    if (state.mode === 'listening') setTimeout(startListening, 3000);
   };
 
   ws.onerror = () => ws.close();
@@ -187,11 +244,16 @@ function connectFromInput() {
   const raw = $('host-ip-input').value.trim();
   if (!raw) return;
   const addr = raw.includes(':') ? raw : `${raw}:3717`;
-  callContact(addr);
+  callContact(addr, null);
 }
 
-async function callContact(ip) {
-  // Drop listening connection before calling out
+async function callContact(addr, hostname = null) {
+  // Resolve fresh IP via mDNS if peer is currently online
+  if (hostname && livePeers.has(hostname)) {
+    const peer = livePeers.get(hostname);
+    addr = `${peer.ip}:${peer.port}`;
+  }
+
   if (state.ws) {
     state.ws.onclose = null;
     state.ws.close();
@@ -201,15 +263,15 @@ async function callContact(ip) {
   const myIps = await invoke('get_local_ips');
   const myIp = myIps[0] || '';
 
-  const ws = new WebSocket(`ws://${ip}`);
+  const ws = new WebSocket(`ws://${addr}`);
   state.ws = ws;
   state.mode = 'calling';
-  state.callPeerIp = ip;
+  state.callPeerIp       = addr;
+  state.callPeerHostname = hostname;
 
   ws.onopen = () => {
-    // Announce ourselves once connected
-    send({ type: 'call-request', name: deviceName, ip: myIp });
-    setStatus(`Calling...`);
+    send({ type: 'call-request', name: deviceName, hostname: deviceName, ip: myIp });
+    setStatus('Calling...');
   };
 
   ws.onmessage = async (e) => {
@@ -217,10 +279,9 @@ async function callContact(ip) {
 
     if (state.mode === 'calling') {
       if (msg.type === 'call-accepted') {
-        state.callPeerName = null; // We'll get it from the other side
         await startMedia();
         enterCallScreen();
-        await startCall(); // We initiate the WebRTC offer
+        await startCall();
       }
       if (msg.type === 'call-declined') {
         showJoinError('Call was declined.');
@@ -241,9 +302,7 @@ async function callContact(ip) {
       resetToListening();
     } else if (state.mode === 'in-call') {
       setStatus('Connection lost — reconnecting...');
-      setTimeout(() => {
-        if (state.ws === ws) callContact(ip);
-      }, 3000);
+      setTimeout(() => { if (state.ws === ws) callContact(addr, hostname); }, 3000);
     }
   };
 
@@ -263,7 +322,6 @@ $('btn-accept').addEventListener('click', async () => {
   state.mode = 'in-call';
   await startMedia();
   enterCallScreen();
-  // Don't call startCall() — the caller will send the offer
 });
 
 $('btn-decline').addEventListener('click', () => {
@@ -426,22 +484,31 @@ function teardown() {
 // ── Save contact prompt ───────────────────────────────────────────────────────
 
 function promptSaveContact() {
-  const ip = state.callPeerIp;
-  const suggestedName = state.callPeerName;
+  const ip       = state.callPeerIp;
+  const hostname = state.callPeerHostname;
   if (!ip) return;
 
-  // Don't prompt if already saved
-  const existing = loadContacts().find((c) => c.ip === ip);
-  if (existing) { existing.lastSeen = new Date().toISOString(); saveContacts(loadContacts()); return; }
+  const contacts = loadContacts();
+  const existing = contacts.find((c) =>
+    (hostname && c.hostname === hostname) || c.lastIp === ip || c.ip === ip
+  );
+  if (existing) {
+    existing.lastSeen = new Date().toISOString();
+    if (hostname) existing.hostname = hostname;
+    existing.lastIp = ip;
+    saveContacts(contacts);
+    renderContacts();
+    return;
+  }
 
   $('save-ip-display').textContent = ip;
-  $('save-name-input').value = suggestedName || '';
+  $('save-name-input').value = state.callPeerName || hostname || '';
   show('save-overlay');
 }
 
 $('btn-save-confirm').addEventListener('click', () => {
   const name = $('save-name-input').value.trim() || $('save-ip-display').textContent;
-  upsertContact(name, $('save-ip-display').textContent);
+  upsertContact(name, $('save-ip-display').textContent, state.callPeerHostname);
   hide('save-overlay');
 });
 
@@ -473,7 +540,6 @@ async function hangUp() {
     state.ws = null;
   }
 
-  // Reset controls
   $('btn-mute-mic').textContent = 'Mute Mic';
   $('btn-mute-mic').classList.remove('muted');
   $('btn-mute-cam').textContent = 'Stop Video';
@@ -492,9 +558,9 @@ async function hangUp() {
 
 function resetToListening() {
   state.mode = 'idle';
-  state.callPeerIp = null;
-  state.callPeerName = null;
-  // Small delay so any in-flight close events settle
+  state.callPeerIp       = null;
+  state.callPeerName     = null;
+  state.callPeerHostname = null;
   setTimeout(startListening, 500);
 }
 

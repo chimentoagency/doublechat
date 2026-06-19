@@ -1,8 +1,24 @@
+mod mdns;
 mod signaling;
 
 use tauri::Emitter;
 
 const SIGNAL_PORT: u16 = 3717;
+
+fn local_ipv4s() -> Vec<std::net::Ipv4Addr> {
+    match local_ip_address::list_afinet_netifas() {
+        Ok(ifaces) => ifaces
+            .into_iter()
+            .filter_map(|(_, ip)| {
+                if let std::net::IpAddr::V4(v4) = ip {
+                    if !v4.is_loopback() { return Some(v4); }
+                }
+                None
+            })
+            .collect(),
+        Err(_) => vec![],
+    }
+}
 
 #[tauri::command]
 fn get_device_name() -> String {
@@ -13,20 +29,10 @@ fn get_device_name() -> String {
 
 #[tauri::command]
 fn get_local_ips() -> Vec<String> {
-    match local_ip_address::list_afinet_netifas() {
-        Ok(ifaces) => ifaces
-            .into_iter()
-            .filter_map(|(_, ip)| {
-                if let std::net::IpAddr::V4(v4) = ip {
-                    if !v4.is_loopback() {
-                        return Some(format!("{}:{}", v4, SIGNAL_PORT));
-                    }
-                }
-                None
-            })
-            .collect(),
-        Err(_) => vec![],
-    }
+    local_ipv4s()
+        .into_iter()
+        .map(|v4| format!("{}:{}", v4, SIGNAL_PORT))
+        .collect()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -36,10 +42,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-            tauri::async_runtime::spawn(signaling::start(SIGNAL_PORT));
-
             let handle = app.handle().clone();
-            tauri::async_runtime::spawn(check_for_updates(handle));
+            tauri::async_runtime::spawn(signaling::start(SIGNAL_PORT));
+            tauri::async_runtime::spawn(check_for_updates(handle.clone()));
+
+            let ips = local_ipv4s();
+            if !ips.is_empty() {
+                mdns::start(handle, &get_device_name(), ips, SIGNAL_PORT);
+            }
 
             Ok(())
         })
@@ -53,7 +63,7 @@ async fn check_for_updates(app: tauri::AppHandle) {
 
     let updater = match app.updater_builder().build() {
         Ok(u) => u,
-        Err(_) => return, // Not configured yet (no pubkey)
+        Err(_) => return,
     };
 
     let update = match updater.check().await {
@@ -61,7 +71,6 @@ async fn check_for_updates(app: tauri::AppHandle) {
         _ => return,
     };
 
-    // Download silently in background, then notify frontend to prompt restart
     let version = update.version.clone();
     if update
         .download_and_install(|_dl, _total| {}, || {})
