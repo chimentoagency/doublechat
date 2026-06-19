@@ -8,7 +8,7 @@
     "core:window:allow-set-always-on-top",
     "updater:default",
     "dialog:default",
-    "process:allow-relaunch",
+    "process:allow-restart",
     "process:allow-exit"
   ]
 }
