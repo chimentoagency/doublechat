@@ -19,15 +19,17 @@
           <button id="btn-join" class="setup-btn">I'm Joining</button>
         </div>
 
-        <!-- Shown after Host is chosen -->
+        <!-- Host panel -->
         <div id="host-panel" class="panel hidden">
+          <button id="btn-back-host" class="back-btn">← Back</button>
           <p class="panel-label">Share one of these addresses with your partner:</p>
           <div id="host-ips"></div>
           <p id="host-wait" class="wait-msg">Waiting for partner to connect...</p>
         </div>
 
-        <!-- Shown after Join is chosen -->
+        <!-- Join panel -->
         <div id="join-panel" class="panel hidden">
+          <button id="btn-back-join" class="back-btn">← Back</button>
           <label for="host-ip-input">Host's address:</label>
           <div class="join-row">
             <input id="host-ip-input" type="text" placeholder="192.168.1.x:3717" spellcheck="false" />
@@ -38,7 +40,7 @@
       </div>
     </div>
 
-    <!-- ── Call Screen (hidden until connected) ── -->
+    <!-- ── Call Screen ── -->
     <div id="call-screen" class="hidden">
       <header>
         <span class="logo">DoubleChat</span>
@@ -56,15 +58,29 @@
         </div>
       </main>
 
+      <!-- Settings panel (slides up from controls) -->
+      <div id="settings-panel" class="settings-panel hidden">
+        <div class="device-row">
+          <label for="sel-audio">Microphone</label>
+          <select id="sel-audio"></select>
+        </div>
+        <div class="device-row">
+          <label for="sel-video">Camera</label>
+          <select id="sel-video"></select>
+        </div>
+      </div>
+
       <footer class="controls">
         <button id="btn-mute-mic" class="ctrl-btn">Mute Mic</button>
         <button id="btn-mute-cam" class="ctrl-btn">Stop Video</button>
         <button id="btn-popout"   class="ctrl-btn accent">Pop Out</button>
         <button id="btn-on-top"   class="ctrl-btn">Always on Top: Off</button>
+        <button id="btn-settings" class="ctrl-btn">Settings</button>
+        <button id="btn-hangup"   class="ctrl-btn danger">Hang Up</button>
       </footer>
     </div>
 
-    <!-- ── Update banner (hidden until update downloaded) ── -->
+    <!-- ── Update banner ── -->
     <div id="update-banner" class="hidden">
       <span id="update-msg"></span>
       <button id="btn-restart">Restart to Update</button>

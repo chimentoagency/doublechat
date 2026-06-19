@@ -12,6 +12,7 @@ const state = {
   localStream: null,
   alwaysOnTop: false,
   pipWindow: null,
+  signalingAddr: null,
 };
 
 const appWindow = getCurrentWindow();
@@ -30,6 +31,7 @@ $('btn-host').addEventListener('click', async () => {
 
   const ips = await invoke('get_local_ips');
   const container = $('host-ips');
+  container.innerHTML = '';
   if (ips.length === 0) {
     container.textContent = 'Could not detect LAN IP. Check network connection.';
   } else {
@@ -47,11 +49,15 @@ $('btn-host').addEventListener('click', async () => {
   connectSignaling('127.0.0.1:3717');
 });
 
-$('btn-join').addEventListener('click', () => {
+$('btn-join').addEventListener('click', async () => {
   hide('role-btns');
   show('join-panel');
   $('host-ip-input').focus();
+  await startMedia();
 });
+
+$('btn-back-host').addEventListener('click', goHome);
+$('btn-back-join').addEventListener('click', goHome);
 
 $('btn-connect').addEventListener('click', joinWithInput);
 $('host-ip-input').addEventListener('keydown', (e) => {
@@ -62,8 +68,36 @@ async function joinWithInput() {
   const raw = $('host-ip-input').value.trim();
   if (!raw) return;
   const addr = raw.includes(':') ? raw : `${raw}:3717`;
-  await startMedia();
+  state.signalingAddr = addr;
   connectSignaling(addr);
+}
+
+function goHome() {
+  // Stop local stream
+  state.localStream?.getTracks().forEach((t) => t.stop());
+  state.localStream = null;
+  $('local-video').srcObject = null;
+  $('remote-video').srcObject = null;
+
+  // Close connections without triggering auto-reconnect
+  if (state.ws) {
+    state.ws.onclose = null;
+    state.ws.close();
+    state.ws = null;
+  }
+  teardown();
+
+  // Reset setup UI
+  hide('host-panel');
+  hide('join-panel');
+  $('host-ips').innerHTML = '';
+  $('host-ip-input').value = '';
+  hide('join-error');
+  show('role-btns');
+
+  // Ensure we're on the setup screen
+  hide('call-screen');
+  show('setup-screen');
 }
 
 // ── Media ─────────────────────────────────────────────────────────────────────
@@ -75,14 +109,77 @@ async function startMedia() {
       audio: true,
     });
     $('local-video').srcObject = state.localStream;
+    await populateDeviceSelectors();
   } catch (err) {
     showJoinError('Camera/mic access denied: ' + err.message);
   }
 }
 
+async function populateDeviceSelectors() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const audioSel = $('sel-audio');
+  const videoSel = $('sel-video');
+
+  const currentAudio = state.localStream?.getAudioTracks()[0]?.getSettings().deviceId;
+  const currentVideo = state.localStream?.getVideoTracks()[0]?.getSettings().deviceId;
+
+  audioSel.innerHTML = '';
+  videoSel.innerHTML = '';
+
+  devices.filter((d) => d.kind === 'audioinput').forEach((d) => {
+    const opt = document.createElement('option');
+    opt.value = d.deviceId;
+    opt.textContent = d.label || `Microphone ${audioSel.options.length + 1}`;
+    if (d.deviceId === currentAudio) opt.selected = true;
+    audioSel.appendChild(opt);
+  });
+
+  devices.filter((d) => d.kind === 'videoinput').forEach((d) => {
+    const opt = document.createElement('option');
+    opt.value = d.deviceId;
+    opt.textContent = d.label || `Camera ${videoSel.options.length + 1}`;
+    if (d.deviceId === currentVideo) opt.selected = true;
+    videoSel.appendChild(opt);
+  });
+}
+
+async function reinitMedia() {
+  const audioId = $('sel-audio').value;
+  const videoId = $('sel-video').value;
+
+  state.localStream?.getTracks().forEach((t) => t.stop());
+
+  try {
+    state.localStream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { exact: videoId }, width: 640, height: 480, frameRate: 15 },
+      audio: { deviceId: { exact: audioId } },
+    });
+    $('local-video').srcObject = state.localStream;
+
+    // Replace tracks live if in a call
+    if (state.pc) {
+      for (const sender of state.pc.getSenders()) {
+        if (sender.track?.kind === 'audio') {
+          const t = state.localStream.getAudioTracks()[0];
+          if (t) await sender.replaceTrack(t);
+        } else if (sender.track?.kind === 'video') {
+          const t = state.localStream.getVideoTracks()[0];
+          if (t) await sender.replaceTrack(t);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to switch device:', err);
+  }
+}
+
+$('sel-audio').addEventListener('change', reinitMedia);
+$('sel-video').addEventListener('change', reinitMedia);
+
 // ── Signaling ─────────────────────────────────────────────────────────────────
 
 function connectSignaling(addr) {
+  state.signalingAddr = addr;
   const ws = new WebSocket(`ws://${addr}`);
   state.ws = ws;
   setStatus('Connecting...');
@@ -96,10 +193,12 @@ function connectSignaling(addr) {
 
   ws.onclose = () => {
     if ($('call-screen').classList.contains('hidden')) {
-      showJoinError('Could not connect to host. Check the address and try again.');
+      showJoinError('Could not reach host. Check the address and try again.');
     } else {
-      setStatus('Disconnected — reconnecting...');
-      setTimeout(() => connectSignaling(addr), 3000);
+      setStatus('Connection lost — reconnecting...');
+      setTimeout(() => {
+        if (state.ws === ws) connectSignaling(state.signalingAddr);
+      }, 3000);
     }
   };
 
@@ -114,9 +213,7 @@ async function handleSignal(msg) {
       break;
 
     case 'peers':
-      if (msg.count === 1) setStatus('Waiting for partner...');
       if (msg.count === 2) {
-        // We joined and a partner is already waiting — wait for their offer
         enterCallScreen();
         setStatus('Partner found — connecting...');
       }
@@ -124,7 +221,6 @@ async function handleSignal(msg) {
 
     case 'peer-joined':
       if (msg.count === 2 && !state.pc) {
-        // We were already here — initiate
         enterCallScreen();
         setStatus('Partner connected — starting call...');
         await startCall();
@@ -161,15 +257,16 @@ function buildPeerConnection() {
 
   for (const track of state.localStream.getTracks()) pc.addTrack(track, state.localStream);
 
-  const remoteStream = new MediaStream();
-  $('remote-video').srcObject = remoteStream;
-
+  // Use the stream provided by the remote peer directly — this carries both
+  // audio and video and avoids manual track assembly dropping the audio track.
   pc.ontrack = (e) => {
-    remoteStream.addTrack(e.track);
-    // Keep pip window in sync if open
-    if (state.pipWindow && !state.pipWindow.closed) {
-      const pipVid = state.pipWindow.document.getElementById('pip-vid');
-      if (pipVid) pipVid.srcObject = remoteStream;
+    if (e.streams?.[0]) {
+      $('remote-video').srcObject = e.streams[0];
+      $('remote-video').play().catch(() => {});
+      if (state.pipWindow && !state.pipWindow.closed) {
+        const pipVid = state.pipWindow.document.getElementById('pip-vid');
+        if (pipVid) pipVid.srcObject = e.streams[0];
+      }
     }
   };
 
@@ -210,6 +307,34 @@ function teardown() {
   $('remote-video').srcObject = null;
 }
 
+// ── Hang Up ───────────────────────────────────────────────────────────────────
+
+$('btn-hangup').addEventListener('click', hangUp);
+
+async function hangUp() {
+  // Close pip if open
+  if (state.pipWindow && !state.pipWindow.closed) state.pipWindow.close();
+  if (document.pictureInPictureElement) await document.exitPictureInPicture().catch(() => {});
+
+  // Reset always-on-top
+  if (state.alwaysOnTop) {
+    state.alwaysOnTop = false;
+    await appWindow.setAlwaysOnTop(false);
+  }
+
+  goHome();
+
+  // Reset control button states
+  $('btn-mute-mic').textContent = 'Mute Mic';
+  $('btn-mute-mic').classList.remove('muted');
+  $('btn-mute-cam').textContent = 'Stop Video';
+  $('btn-mute-cam').classList.remove('muted');
+  $('btn-on-top').textContent = 'Always on Top: Off';
+  $('btn-on-top').classList.remove('active');
+  $('btn-popout').textContent = 'Pop Out';
+  hide('settings-panel');
+}
+
 // ── Controls ──────────────────────────────────────────────────────────────────
 
 $('btn-mute-mic').addEventListener('click', () => {
@@ -231,18 +356,20 @@ $('btn-mute-cam').addEventListener('click', () => {
 $('btn-on-top').addEventListener('click', async () => {
   state.alwaysOnTop = !state.alwaysOnTop;
   await appWindow.setAlwaysOnTop(state.alwaysOnTop);
-  $('btn-on-top').textContent = state.alwaysOnTop
-    ? 'Always on Top: On'
-    : 'Always on Top: Off';
+  $('btn-on-top').textContent = state.alwaysOnTop ? 'Always on Top: On' : 'Always on Top: Off';
   $('btn-on-top').classList.toggle('active', state.alwaysOnTop);
 });
 
-// ── Pop-out (Document PiP → fallback video PiP) ───────────────────────────────
+$('btn-settings').addEventListener('click', () => {
+  $('settings-panel').classList.toggle('hidden');
+  $('btn-settings').classList.toggle('active', !$('settings-panel').classList.contains('hidden'));
+});
+
+// ── Pop-out ───────────────────────────────────────────────────────────────────
 
 $('btn-popout').addEventListener('click', handlePopout);
 
 async function handlePopout() {
-  // Close existing pip if open
   if (state.pipWindow && !state.pipWindow.closed) {
     state.pipWindow.close();
     return;
@@ -254,7 +381,6 @@ async function handlePopout() {
 
   const remoteVideo = $('remote-video');
 
-  // Document PiP (Edge/Chrome 116+) — full custom HTML, always-on-top
   if ('documentPictureInPicture' in window) {
     try {
       const pip = await window.documentPictureInPicture.requestWindow({ width: 420, height: 320 });
@@ -264,13 +390,13 @@ async function handlePopout() {
       pip.document.head.innerHTML = `<style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{background:#000;height:100vh;display:flex;flex-direction:column;font-family:system-ui,sans-serif}
-        .bar{padding:.3rem .6rem;background:rgba(0,0,0,.6);color:rgba(255,255,255,.8);font-size:.75rem;display:flex;justify-content:space-between;align-items:center}
+        .bar{padding:.3rem .6rem;background:rgba(0,0,0,.6);color:rgba(255,255,255,.8);font-size:.75rem}
         video{flex:1;width:100%;object-fit:cover;display:block}
       </style>`;
 
       const bar = pip.document.createElement('div');
       bar.className = 'bar';
-      bar.innerHTML = '<span>DoubleChat — Partner</span>';
+      bar.textContent = 'DoubleChat — Partner';
       pip.document.body.appendChild(bar);
 
       const vid = pip.document.createElement('video');
@@ -288,7 +414,6 @@ async function handlePopout() {
     } catch {}
   }
 
-  // Fallback: standard video PiP (always-on-top, video only)
   if (remoteVideo.requestPictureInPicture) {
     await remoteVideo.requestPictureInPicture();
     $('btn-popout').textContent = 'Close Pop-Out';

@@ -47,13 +47,6 @@ impl Room {
         }
     }
 
-    fn send_to(&self, target_id: u64, msg: Message) {
-        for (id, tx) in &self.peers {
-            if *id == target_id {
-                let _ = tx.send(msg.clone());
-            }
-        }
-    }
 }
 
 fn text(s: impl Into<String>) -> Message {
