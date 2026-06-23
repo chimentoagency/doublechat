@@ -44,7 +44,7 @@ pub fn start(app: AppHandle, device_name: &str, local_ip: &str, port: u16) {
     };
 
     let own_name = safe_name;
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         let _keep = mdns;
         loop {
             match receiver.recv_async().await {

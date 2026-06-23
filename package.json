@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "generate-icons": "tauri icon src-tauri/icons/source.svg",
-    "release": "tauri build && node scripts/copy-release.mjs"
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
