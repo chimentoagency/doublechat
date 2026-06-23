@@ -449,5 +449,14 @@ main {
 .setup-btn.danger { border-color: var(--danger); color: var(--danger); }
 .setup-btn.danger:hover { background: color-mix(in srgb, var(--danger) 12%, var(--bg)); }
 
+/* ── Copyright ─────────────────────────────────────────────────────────────── */
+.copyright {
+  margin-top: 1rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  opacity: 0.6;
+  text-align: center;
+}
+
 /* ── Utility ───────────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }

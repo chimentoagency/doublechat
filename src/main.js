@@ -34,6 +34,7 @@ const hide = (id) => $(id).classList.add('hidden');
 // ── Startup ───────────────────────────────────────────────────────────────────
 
 async function init() {
+  $('copyright-year').textContent = new Date().getFullYear();
   deviceName = await invoke('get_device_name');
   renderContacts();
   startListening();
