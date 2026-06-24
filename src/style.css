@@ -28,11 +28,13 @@ html, body {
 #setup-screen {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
 }
 
 .setup-card {
+  position: relative;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -41,6 +43,21 @@ html, body {
   max-width: 94vw;
   text-align: center;
 }
+
+.settings-gear-btn {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 4px;
+  line-height: 1;
+}
+.settings-gear-btn:hover { color: var(--text); }
 
 .setup-card h1 {
   font-size: 2rem;
@@ -200,15 +217,86 @@ main {
   box-shadow: 0 4px 20px rgba(0,0,0,0.5);
 }
 
-/* ── Settings panel ────────────────────────────────────────────────────────── */
+/* ── Settings modal ────────────────────────────────────────────────────────── */
 
-.settings-panel {
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  padding: 0.75rem 1.25rem;
+.settings-modal {
+  width: 420px;
+  max-width: 94vw;
+  text-align: left;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.settings-modal-header {
   display: flex;
-  gap: 1.5rem;
-  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-close-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0.25rem 0.4rem;
+  border-radius: 4px;
+}
+.settings-close-btn:hover { color: var(--text); background: var(--bg); }
+
+.settings-section {
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.settings-section + .settings-section { border-top: 1px solid var(--border); }
+
+.settings-section-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin-bottom: 0.15rem;
+}
+
+.perm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.perm-name { font-size: 0.88rem; }
+
+.perm-status {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--muted) 15%, transparent);
+  color: var(--muted);
+}
+.perm-status[data-state="granted"] {
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
+}
+.perm-status[data-state="denied"] {
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  color: var(--danger);
+}
+
+.perm-denied-msg {
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.5;
+  padding: 0.5rem 0.75rem;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
+  border-radius: 6px;
 }
 
 .device-row {
@@ -218,17 +306,55 @@ main {
   flex: 1;
 }
 
-.device-row select {
+.settings-modal .dev-select-list {
+  bottom: auto;
+  top: calc(100% + 4px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+.dev-select { position: relative; }
+
+.dev-select-btn {
+  width: 100%;
   padding: 0.4rem 0.6rem;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);
   font-size: 0.82rem;
-  outline: none;
   cursor: pointer;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
 }
-.device-row select:focus { border-color: var(--accent); }
+.dev-select-btn::after { content: '▲'; font-size: 0.6rem; color: var(--muted); flex-shrink: 0; }
+.dev-select-btn:focus { border-color: var(--accent); outline: none; }
+.dev-select-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.dev-select-list {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  list-style: none;
+  overflow-y: auto;
+  max-height: 180px;
+  z-index: 20;
+  box-shadow: 0 -4px 12px rgba(0,0,0,0.4);
+}
+.dev-select-list li {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  color: var(--text);
+}
+.dev-select-list li:hover { background: var(--bg); }
+.dev-select-list li.selected { color: var(--accent); }
 
 /* ── Controls ──────────────────────────────────────────────────────────────── */
 

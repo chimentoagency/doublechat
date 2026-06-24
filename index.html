@@ -11,6 +11,7 @@
     <!-- ── Setup Screen ── -->
     <div id="setup-screen">
       <div class="setup-card">
+        <button id="btn-settings-setup" class="settings-gear-btn" title="Settings">&#9881;</button>
 
         <h1>DoubleChat</h1>
         <p class="tagline">Local body-doubling video call</p>
@@ -80,6 +81,52 @@
       </div>
     </div>
 
+    <!-- ── Settings Modal ── -->
+    <div id="settings-overlay" class="modal-overlay hidden">
+      <div class="modal-card settings-modal">
+        <div class="settings-modal-header">
+          <p class="modal-eyebrow">Settings</p>
+          <button id="btn-settings-close" class="settings-close-btn">&#10005;</button>
+        </div>
+
+        <!-- Permissions -->
+        <div class="settings-section">
+          <p class="settings-section-label">Permissions</p>
+          <div class="perm-row">
+            <span class="perm-name">Microphone</span>
+            <span class="perm-status" id="perm-mic-status" data-state="prompt">Checking...</span>
+          </div>
+          <div class="perm-row">
+            <span class="perm-name">Camera</span>
+            <span class="perm-status" id="perm-cam-status" data-state="prompt">Checking...</span>
+          </div>
+          <button id="btn-request-access" class="setup-btn primary hidden">Request Access</button>
+          <p id="perm-denied-msg" class="perm-denied-msg hidden">
+            Access was blocked. Go to Windows Settings &rarr; Privacy &amp; Security &rarr; Camera / Microphone to re-enable.
+          </p>
+        </div>
+
+        <!-- Devices -->
+        <div class="settings-section" id="devices-section">
+          <p class="settings-section-label">Devices</p>
+          <div class="device-row">
+            <label>Microphone</label>
+            <div class="dev-select" id="sel-audio" data-value="">
+              <button class="dev-select-btn" type="button"><span>Loading...</span></button>
+              <ul class="dev-select-list hidden"></ul>
+            </div>
+          </div>
+          <div class="device-row">
+            <label>Camera</label>
+            <div class="dev-select" id="sel-video" data-value="">
+              <button class="dev-select-btn" type="button"><span>Loading...</span></button>
+              <ul class="dev-select-list hidden"></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ── Call Screen ── -->
     <div id="call-screen" class="hidden">
       <header>
@@ -97,17 +144,6 @@
           <span class="vid-label">You</span>
         </div>
       </main>
-
-      <div id="settings-panel" class="settings-panel hidden">
-        <div class="device-row">
-          <label for="sel-audio">Microphone</label>
-          <select id="sel-audio"></select>
-        </div>
-        <div class="device-row">
-          <label for="sel-video">Camera</label>
-          <select id="sel-video"></select>
-        </div>
-      </div>
 
       <footer class="controls">
         <button id="btn-mute-mic" class="ctrl-btn">Mute Mic</button>

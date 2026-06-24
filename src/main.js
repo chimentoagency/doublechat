@@ -348,33 +348,65 @@ async function startMedia() {
 
 async function populateDeviceSelectors() {
   const devices = await navigator.mediaDevices.enumerateDevices();
-  const audioSel = $('sel-audio');
-  const videoSel = $('sel-video');
   const curAudio = state.localStream?.getAudioTracks()[0]?.getSettings().deviceId;
   const curVideo = state.localStream?.getVideoTracks()[0]?.getSettings().deviceId;
 
-  audioSel.innerHTML = '';
-  videoSel.innerHTML = '';
+  fillDevSelect('sel-audio', devices.filter((d) => d.kind === 'audioinput'), curAudio, 'Microphone');
+  fillDevSelect('sel-video', devices.filter((d) => d.kind === 'videoinput'), curVideo, 'Camera');
+}
 
-  devices.filter((d) => d.kind === 'audioinput').forEach((d) => {
-    const opt = document.createElement('option');
-    opt.value = d.deviceId;
-    opt.textContent = d.label || `Microphone ${audioSel.options.length + 1}`;
-    if (d.deviceId === curAudio) opt.selected = true;
-    audioSel.appendChild(opt);
+function fillDevSelect(id, devices, curDeviceId, fallback) {
+  const wrap = $(id);
+  const list = wrap.querySelector('.dev-select-list');
+  const btnLabel = wrap.querySelector('.dev-select-btn span');
+
+  list.innerHTML = '';
+
+  if (devices.length === 0) {
+    btnLabel.textContent = 'No device found';
+    wrap.dataset.value = '';
+    const li = document.createElement('li');
+    li.textContent = 'No device found';
+    li.style.cssText = 'opacity:0.5;cursor:default;pointer-events:none';
+    list.appendChild(li);
+    wrap.querySelector('.dev-select-btn').onclick = (e) => {
+      e.stopPropagation();
+      list.classList.toggle('hidden');
+    };
+    return;
+  }
+
+  devices.forEach((d, i) => {
+    const li = document.createElement('li');
+    li.dataset.value = d.deviceId;
+    li.textContent = d.label || `${fallback} ${i + 1}`;
+    if (d.deviceId === curDeviceId || (!curDeviceId && i === 0)) {
+      li.classList.add('selected');
+      btnLabel.textContent = li.textContent;
+      wrap.dataset.value = d.deviceId;
+    }
+    li.addEventListener('click', () => {
+      list.querySelectorAll('li').forEach((el) => el.classList.remove('selected'));
+      li.classList.add('selected');
+      btnLabel.textContent = li.textContent;
+      wrap.dataset.value = d.deviceId;
+      list.classList.add('hidden');
+      reinitMedia();
+    });
+    list.appendChild(li);
   });
-  devices.filter((d) => d.kind === 'videoinput').forEach((d) => {
-    const opt = document.createElement('option');
-    opt.value = d.deviceId;
-    opt.textContent = d.label || `Camera ${videoSel.options.length + 1}`;
-    if (d.deviceId === curVideo) opt.selected = true;
-    videoSel.appendChild(opt);
-  });
+
+  wrap.querySelector('.dev-select-btn').onclick = (e) => {
+    e.stopPropagation();
+    const otherId = id === 'sel-audio' ? 'sel-video' : 'sel-audio';
+    $(otherId).querySelector('.dev-select-list').classList.add('hidden');
+    list.classList.toggle('hidden');
+  };
 }
 
 async function reinitMedia() {
-  const audioId = $('sel-audio').value;
-  const videoId = $('sel-video').value;
+  const audioId = $('sel-audio').dataset.value;
+  const videoId = $('sel-video').dataset.value;
   state.localStream?.getTracks().forEach((t) => t.stop());
   try {
     state.localStream = await navigator.mediaDevices.getUserMedia({
@@ -398,8 +430,9 @@ async function reinitMedia() {
   }
 }
 
-$('sel-audio').addEventListener('change', reinitMedia);
-$('sel-video').addEventListener('change', reinitMedia);
+document.addEventListener('click', () => {
+  document.querySelectorAll('.dev-select-list').forEach((l) => l.classList.add('hidden'));
+});
 
 // ── Signaling (in-call relay) ─────────────────────────────────────────────────
 
@@ -548,8 +581,7 @@ async function hangUp() {
   $('btn-on-top').textContent = 'Always on Top: Off';
   $('btn-on-top').classList.remove('active');
   $('btn-popout').textContent = 'Pop Out';
-  hide('settings-panel');
-  $('btn-settings').classList.remove('active');
+  closeSettings();
 
   if (hadCall) promptSaveContact();
 
@@ -590,10 +622,74 @@ $('btn-on-top').addEventListener('click', async () => {
   $('btn-on-top').classList.toggle('active', state.alwaysOnTop);
 });
 
-$('btn-settings').addEventListener('click', () => {
-  $('settings-panel').classList.toggle('hidden');
-  $('btn-settings').classList.toggle('active', !$('settings-panel').classList.contains('hidden'));
+$('btn-settings').addEventListener('click', openSettings);
+$('btn-settings-setup').addEventListener('click', openSettings);
+$('btn-settings-close').addEventListener('click', closeSettings);
+$('settings-overlay').addEventListener('click', (e) => {
+  if (e.target === $('settings-overlay')) closeSettings();
 });
+
+$('btn-request-access').addEventListener('click', async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    stream.getTracks().forEach((t) => t.stop());
+    updatePermUI('granted', 'granted');
+  } catch (err) {
+    updatePermUI(err.name === 'NotAllowedError' ? 'denied' : 'prompt',
+                 err.name === 'NotAllowedError' ? 'denied' : 'prompt');
+  }
+});
+
+async function openSettings() {
+  show('settings-overlay');
+  await checkPermissions();
+}
+
+function closeSettings() {
+  hide('settings-overlay');
+  document.querySelectorAll('.dev-select-list').forEach((l) => l.classList.add('hidden'));
+}
+
+async function checkPermissions() {
+  try {
+    const [mic, cam] = await Promise.all([
+      navigator.permissions.query({ name: 'microphone' }),
+      navigator.permissions.query({ name: 'camera' }),
+    ]);
+    const refresh = () => updatePermUI(mic.state, cam.state);
+    mic.onchange = refresh;
+    cam.onchange = refresh;
+    refresh();
+  } catch {
+    // Permissions API unsupported — probe via getUserMedia directly
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+      updatePermUI('granted', 'granted');
+    } catch (err) {
+      updatePermUI(err.name === 'NotAllowedError' ? 'denied' : 'prompt',
+                   err.name === 'NotAllowedError' ? 'denied' : 'prompt');
+    }
+  }
+}
+
+function updatePermUI(micState, camState) {
+  const label = (s) => s === 'granted' ? 'Allowed' : s === 'denied' ? 'Blocked' : 'Not requested';
+  $('perm-mic-status').textContent = label(micState);
+  $('perm-mic-status').dataset.state = micState;
+  $('perm-cam-status').textContent = label(camState);
+  $('perm-cam-status').dataset.state = camState;
+
+  const anyDenied = micState === 'denied' || camState === 'denied';
+  const anyPrompt = micState === 'prompt' || camState === 'prompt';
+  const allGranted = micState === 'granted' && camState === 'granted';
+
+  $('perm-denied-msg').classList.toggle('hidden', !anyDenied);
+  $('btn-request-access').classList.toggle('hidden', !anyPrompt);
+  $('devices-section').classList.toggle('hidden', !allGranted);
+
+  if (allGranted) populateDeviceSelectors();
+}
 
 // ── Pop-out ───────────────────────────────────────────────────────────────────
 
